@@ -11,18 +11,19 @@ spring:
   cloud:
     gateway:
       routes:
-        - id: example-service
+        - id: catalog-search-route
           uri: http://localhost:8081
           predicates:
-            - Path=/api/example/**
+            - Path=/api/v1/products/**, /api/v1/search/**
           filters:
             - name: RequestRateLimiter
               args:
-                key-resolver: "#{@ipKeyResolver}"
-                redis-rate-limiter: "#{@redisRateLimiter}"
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                key-resolver: "#{@userKeyResolver}"
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health, info, metrics
