@@ -33,6 +33,17 @@ spring:
                 redis-rate-limiter.burstCapacity: 20
                 key-resolver: "#{@userKeyResolver}"
 
+        - id: social-graph-service
+          uri: http://localhost:8083
+          predicates:
+            - Path=/api/v1/graph/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                key-resolver: "#{@userKeyResolver}"
+
 management:
   endpoints:
     web:

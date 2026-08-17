@@ -23,6 +23,7 @@
         <module>api-gateway</module>
         <module>catalog-search-service</module>
         <module>order-activity-service</module>
+        <module>social-graph-service</module>
     </modules>
 
     <properties>
