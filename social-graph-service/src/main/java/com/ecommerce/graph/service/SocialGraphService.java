@@ -5,11 +5,16 @@ import com.ecommerce.graph.node.UserNode;
 import com.ecommerce.graph.repository.ProductNodeRepository;
 import com.ecommerce.graph.repository.UserNodeRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SocialGraphService {
@@ -36,7 +41,12 @@ public class SocialGraphService {
     }
 
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "bought-together", key = "#productId"),
+        @CacheEvict(value = "social-recommendations", allEntries = true)
+    })
     public UserNode recordPurchase(String userId, String productId) {
+        log.info("Recording purchase & evicting stale recommendation caches for user: {}, product: {}", userId, productId);
         UserNode user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
         ProductNode product = productRepository.findById(productId)
@@ -47,7 +57,9 @@ public class SocialGraphService {
     }
 
     @Transactional
+    @CacheEvict(value = "social-recommendations", key = "#followerId")
     public UserNode followUser(String followerId, String targetUserId) {
+        log.info("User {} followed {} -> evicting social recommendation cache for {}", followerId, targetUserId, followerId);
         UserNode follower = userRepository.findById(followerId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + followerId));
         UserNode target = userRepository.findById(targetUserId)
@@ -57,11 +69,15 @@ public class SocialGraphService {
         return userRepository.save(follower);
     }
 
+    @Cacheable(value = "bought-together", key = "#productId")
     public List<ProductNode> getFrequentlyBoughtTogether(String productId, int limit) {
+        log.info("⚡ [CACHE MISS] Querying Neo4j for bought-together recommendations on product: {}", productId);
         return productRepository.findFrequentlyBoughtTogether(productId, limit);
     }
 
+    @Cacheable(value = "social-recommendations", key = "#userId")
     public List<ProductNode> getSocialRecommendations(String userId, int limit) {
+        log.info("⚡ [CACHE MISS] Querying Neo4j for social recommendations on user: {}", userId);
         return productRepository.findRecommendedByFriends(userId, limit);
     }
 }
