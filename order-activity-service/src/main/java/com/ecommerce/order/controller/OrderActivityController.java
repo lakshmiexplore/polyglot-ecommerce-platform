@@ -24,6 +24,7 @@ public class OrderActivityController {
         private UUID userId;
         private String customerEmail;
         private BigDecimal totalAmount;
+        private List<String> productIds;
     }
 
     @Data
@@ -34,7 +35,12 @@ public class OrderActivityController {
 
     @PostMapping
     public ResponseEntity<OrderByUser> createOrder(@RequestBody CreateOrderRequest req) {
-        return ResponseEntity.ok(orderService.createOrder(req.getUserId(), req.getCustomerEmail(), req.getTotalAmount()));
+        return ResponseEntity.ok(orderService.createOrder(
+                req.getUserId(),
+                req.getCustomerEmail(),
+                req.getTotalAmount(),
+                req.getProductIds()
+        ));
     }
 
     @GetMapping("/user/{userId}")

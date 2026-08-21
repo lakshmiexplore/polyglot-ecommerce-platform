@@ -6,9 +6,12 @@ import com.ecommerce.graph.repository.ProductNodeRepository;
 import com.ecommerce.graph.repository.UserNodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.annotation.Caching;
+//import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +24,7 @@ public class SocialGraphService {
 
     private final UserNodeRepository userRepository;
     private final ProductNodeRepository productRepository;
+    private final CacheManager cacheManager;
 
     @Transactional
     public UserNode saveUser(String id, String name, String email) {
@@ -41,19 +45,37 @@ public class SocialGraphService {
     }
 
     @Transactional
-    @Caching(evict = {
-        @CacheEvict(value = "bought-together", key = "#productId"),
-        @CacheEvict(value = "social-recommendations", allEntries = true)
-    })
     public UserNode recordPurchase(String userId, String productId) {
-        log.info("Recording purchase & evicting stale recommendation caches for user: {}, product: {}", userId, productId);
         UserNode user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
         ProductNode product = productRepository.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("Product not found: " + productId));
 
         user.purchase(product);
-        return userRepository.save(user);
+        UserNode savedUser = userRepository.save(user);
+
+        // 1. Evict the bought-together cache for this specific product
+        Cache boughtTogetherCache = cacheManager.getCache("bought-together");
+        if (boughtTogetherCache != null) {
+            boughtTogetherCache.evict(productId);
+            log.info("Evicted 'bought-together' cache for product {}", productId);
+        }
+
+        // 2. Targeted Eviction: Find followers of this user and evict only their feeds
+        List<String> followerIds = userRepository.findFollowerIds(userId);
+        Cache socialCache = cacheManager.getCache("social-recommendations");
+        if (socialCache != null) {
+            // Evict the buyer's own feed (to filter out the item they just purchased)
+            socialCache.evict(userId);
+
+            // Evict feeds of all direct followers
+            for (String followerId : followerIds) {
+                socialCache.evict(followerId);
+                log.info("Evicted social recommendation cache for follower: {}", followerId);
+            }
+        }
+
+        return savedUser;
     }
 
     @Transactional
