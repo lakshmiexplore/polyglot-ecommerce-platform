@@ -55,6 +55,11 @@ public class SocialGraphController {
         return ResponseEntity.ok(graphService.followUser(followerId, targetUserId));
     }
 
+    @GetMapping("/users")
+    public ResponseEntity<Object> getAllUsers() {
+        return ResponseEntity.ok(graphService.getAllUsers());
+    }
+
     @GetMapping("/recommendations/bought-together/{productId}")
     public ResponseEntity<List<ProductNode>> getFrequentlyBoughtTogether(
             @PathVariable String productId,

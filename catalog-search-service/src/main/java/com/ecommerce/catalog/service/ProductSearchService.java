@@ -1,6 +1,6 @@
 package com.ecommerce.catalog.service;
 
-import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType;
 import com.ecommerce.catalog.model.ProductDocument;
 import com.ecommerce.catalog.repository.ProductSearchRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,20 +27,37 @@ public class ProductSearchService {
         return repository.findAll();
     }
 
-    // Fuzzy, multi-match full-text search across name, description, and tags
     public List<ProductDocument> searchProducts(String keyword, String category, Double minPrice, Double maxPrice) {
         NativeQuery query = NativeQuery.builder()
                 .withQuery(q -> q.bool(b -> {
                     if (keyword != null && !keyword.isBlank()) {
-                        b.must(m -> m.multiMatch(mm -> mm
-                                .query(keyword)
-                                .fields("name^3", "description^1", "tags^2")
-                                .fuzziness("AUTO")
+                        String clean = keyword.trim().toLowerCase();
+                        String wildPattern = "*" + clean + "*";
+
+                        b.must(m -> m.bool(sb -> sb
+                                // 1. Multi-match with Fuzziness across text fields
+                                .should(s -> s.multiMatch(mm -> mm
+                                        .query(clean)
+                                        .fields("name^3", "description")
+                                        .fuzziness("AUTO")
+                                ))
+                                // 2. Phrase prefix matching on name
+                                .should(s -> s.multiMatch(mm -> mm
+                                        .query(clean)
+                                        .fields("name^3", "description")
+                                        .type(TextQueryType.PhrasePrefix)
+                                ))
+                                // 3. Wildcard queries (matches 'headphones' when searching 'phone')
+                                .should(s -> s.wildcard(w -> w.field("name").value(wildPattern)))
+                                .should(s -> s.wildcard(w -> w.field("description").value(wildPattern)))
+                                .minimumShouldMatch("1")
                         ));
                     }
+
                     if (category != null && !category.isBlank()) {
                         b.filter(f -> f.term(t -> t.field("category").value(category)));
                     }
+
                     if (minPrice != null || maxPrice != null) {
                         b.filter(f -> f.range(r -> {
                             r.field("price");

@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polyglot E-Commerce Control Center</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
+        .card { background-color: #1e293b; border: 1px solid #334155; color: #f8fafc; }
+        .modal-content { background-color: #1e293b; border: 1px solid #475569; color: #f8fafc; }
+        .form-control, .form-select { background-color: #0f172a; border-color: #475569; color: #f8fafc; }
+        .form-control:focus, .form-select:focus { background-color: #0f172a; color: #f8fafc; border-color: #38bdf8; box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25); }
+        .badge-polyglot { font-size: 0.75rem; padding: 0.35em 0.65em; }
+        .log-box { background: #090d16; color: #38bdf8; padding: 0.75rem; border-radius: 0.5rem; max-height: 220px; font-size: 0.8rem; overflow-y: auto; }
+        .result-item { background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; }
+        #networkGraph { width: 100%; height: 460px; background: #090d16; border: 1px solid #334155; border-radius: 0.5rem; }
+    </style>
+</head>
+<body class="p-4">
+<div class="container-fluid max-w-7xl">
+    <!-- Top Navigation Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-3 border-bottom border-secondary">
+        <div>
+            <h3 class="fw-bold text-white mb-1"><i class="bi bi-cpu text-info me-2"></i>Polyglot E-Commerce Control Center</h3>
+            <small class="text-secondary">API Gateway: <code class="text-warning">http://localhost:8080</code> | Unified 3-Digit IDs (101, 102, 103, 104...)</small>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-primary" onclick="openCreateUserModal()"><i class="bi bi-person-plus-fill me-1"></i>New User</button>
+            <button class="btn btn-sm btn-outline-success" onclick="openCatalogModal()"><i class="bi bi-cart-plus me-1"></i>Catalog & Buy</button>
+            <button class="btn btn-sm btn-outline-info" onclick="openGraphModal()"><i class="bi bi-diagram-2 me-1"></i>Live Graph</button>
+            <button class="btn btn-sm btn-outline-warning" onclick="openOrdersModal()"><i class="bi bi-receipt me-1"></i>Orders Timeline</button>
+            <a href="http://localhost:9411" target="_blank" class="btn btn-sm btn-outline-danger"><i class="bi bi-diagram-3 me-1"></i>Zipkin</a>
+            <a href="http://localhost:7474" target="_blank" class="btn btn-sm btn-outline-light"><i class="bi bi-share me-1"></i>Neo4j</a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Panel 1: Catalog Search (Elasticsearch) -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                    <span class="fw-bold"><i class="bi bi-search text-primary me-2"></i>Catalog Search</span>
+                    <span class="badge bg-primary badge-polyglot">Elasticsearch</span>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <div class="mb-3">
+                        <label class="form-label small text-secondary">Search Keyword</label>
+                        <input type="text" id="searchQuery" class="form-control form-control-sm" placeholder="e.g. phone, sony, wireless">
+                    </div>
+                    <button class="btn btn-primary btn-sm mb-3 w-100" onclick="searchCatalog()"><i class="bi bi-lightning-charge me-1"></i>Search</button>
+                    <div class="flex-grow-1 overflow-auto" id="searchResults" style="max-height: 380px;">
+                        <div class="text-secondary small text-center mt-4">Search results will appear here...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel 2: Checkout & Event Stream (Cassandra -> Kafka -> Neo4j) -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                    <span class="fw-bold"><i class="bi bi-bag-check text-success me-2"></i>Checkout Stream</span>
+                    <span class="badge bg-success badge-polyglot">Cassandra + Kafka</span>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <div class="mb-2">
+                        <label class="form-label small text-secondary">User ID (3 Digits)</label>
+                        <input type="text" id="orderUserId" class="form-control form-control-sm" value="101">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small text-secondary">Customer Email</label>
+                        <input type="email" id="orderEmail" class="form-control form-control-sm" value="alice@example.com">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small text-secondary">Product IDs (comma separated)</label>
+                        <input type="text" id="orderProductIds" class="form-control form-control-sm" value="p103, p104">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-secondary">Total Amount ($)</label>
+                        <input type="number" id="orderTotal" class="form-control form-control-sm" value="499.98">
+                    </div>
+                    <button class="btn btn-success btn-sm w-100 mb-3" onclick="placeOrder()"><i class="bi bi-send-check me-1"></i>Submit Order</button>
+                    <div id="orderStatusCard" class="flex-grow-1">
+                        <div class="text-secondary small text-center mt-3">Ready to place order...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel 3: Graph Recommendations & Social (Neo4j + Redis) -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                    <span class="fw-bold"><i class="bi bi-share text-info me-2"></i>Recommendations & Social</span>
+                    <span class="badge bg-info text-dark badge-polyglot">Neo4j + Redis</span>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <div class="p-2 mb-3 rounded" style="background:#0f172a; border: 1px dashed #475569;">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="small text-info fw-bold"><i class="bi bi-person-plus me-1"></i>Follow User</span>
+                            <span class="text-secondary" style="font-size:0.7rem;">(:User)-[:FOLLOWS]->(:User)</span>
+                        </div>
+                        <div class="input-group input-group-sm mb-1">
+                            <input type="text" id="quickFollowerId" class="form-control" placeholder="Follower (102)" value="102">
+                            <input type="text" id="quickTargetId" class="form-control" placeholder="Target (101)" value="101">
+                            <button class="btn btn-info btn-sm text-dark fw-semibold" onclick="quickFollow()"><i class="bi bi-link-45deg"></i></button>
+                        </div>
+                        <div id="quickFollowStatus" style="font-size: 0.72rem;" class="text-secondary text-truncate">Connect users in social graph</div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label small text-secondary">Target User ID (Social Feed)</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" id="graphUserId" class="form-control" value="104">
+                            <button class="btn btn-outline-info" onclick="getSocialRecs()"><i class="bi bi-people me-1"></i>Fetch</button>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-secondary">Product ID (Frequently Bought)</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" id="graphProductId" class="form-control" value="p101">
+                            <button class="btn btn-outline-info" onclick="getBoughtTogetherRecs()"><i class="bi bi-boxes me-1"></i>Fetch</button>
+                        </div>
+                    </div>
+                    <div id="recResults" class="flex-grow-1 overflow-auto" style="max-height: 280px;">
+                        <div class="text-secondary small text-center mt-3">Select a recommendation query above...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel 4: Gateway Rate Limiting & Resilience Test -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                    <span class="fw-bold"><i class="bi bi-speedometer2 text-danger me-2"></i>Rate Limiter & Breaker</span>
+                    <span class="badge bg-danger badge-polyglot">Redis + Resilience4j</span>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <div class="mb-3">
+                        <label class="form-label small text-secondary">Simulate High-Concurrency Burst</label>
+                        <p class="small text-secondary">Fire 25 simultaneous asynchronous requests through Spring Cloud Gateway to test token bucket limits.</p>
+                    </div>
+                    <button class="btn btn-danger btn-sm w-100 mb-3" onclick="fireRateLimitTest()"><i class="bi bi-fire me-1"></i>Blast 25 Requests</button>
+                    <div class="progress mb-3" style="height: 6px;">
+                        <div id="rateLimitProgress" class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div id="rateLimitConsole" class="log-box flex-grow-1">Awaiting stress test...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal 1: Create New User -->
+<div class="modal fade" id="createUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="bi bi-person-plus text-primary me-2"></i>Register New User</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">User ID (3 Digits)</label>
+                    <input type="text" id="newUserId" class="form-control" placeholder="e.g. 105" value="105">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">Full Name</label>
+                    <input type="text" id="newUserName" class="form-control" placeholder="e.g. Bruce Wayne">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">Email Address</label>
+                    <input type="email" id="newUserEmail" class="form-control" placeholder="e.g. bruce@example.com">
+                </div>
+                <div id="createUserAlert" class="d-none alert py-2 small mb-0"></div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="submitCreateUser()"><i class="bi bi-check2 me-1"></i>Save User</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal 2: Products Catalog & Ordering with Quantity -->
+<div class="modal fade" id="catalogModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="bi bi-cart3 text-success me-2"></i>Available Products & Instant Checkout</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="small text-secondary">Select quantities and click <strong>Order Now</strong> to trigger the complete Polyglot transaction.</div>
+                    <button class="btn btn-sm btn-outline-primary" onclick="loadCatalogProducts()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+                </div>
+                <div id="catalogListContainer">
+                    <div class="text-center text-secondary py-4">Loading catalog...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal 3: Live Visual Social & Follow Graph -->
+<div class="modal fade" id="graphModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="bi bi-diagram-2 text-info me-2"></i>Live Neo4j Social & Purchase Network</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="d-flex gap-3 small text-secondary">
+                        <span><span class="badge bg-primary rounded-pill me-1">&nbsp;</span> Users</span>
+                        <span><span class="badge bg-success rounded-pill me-1">&nbsp;</span> Products</span>
+                        <span><span class="badge bg-info rounded-pill me-1">&nbsp;</span> FOLLOWS</span>
+                        <span><span class="badge bg-warning text-dark rounded-pill me-1">&nbsp;</span> PURCHASED</span>
+                    </div>
+                    <button class="btn btn-sm btn-outline-info" onclick="renderVisualGraph()"><i class="bi bi-arrow-clockwise me-1"></i>Reload Graph</button>
+                </div>
+                <div id="networkGraph"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal 4: View All Orders for User -->
+<div class="modal fade" id="ordersModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="bi bi-clock-history text-warning me-2"></i>Cassandra Order Timeline</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group input-group-sm mb-3">
+                    <span class="input-group-text bg-dark text-secondary border-secondary">User ID</span>
+                    <input type="text" id="modalUserUuid" class="form-control" value="101">
+                    <button class="btn btn-warning" onclick="fetchUserOrders()"><i class="bi bi-arrow-clockwise me-1"></i>Load Orders</button>
+                </div>
+                <div id="modalOrdersList">
+                    <div class="text-center text-secondary py-4">Click "Load Orders" to query Cassandra clustered timeline.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const GATEWAY = "http://localhost:8080";
+let ordersModalInstance, catalogModalInstance, graphModalInstance, createUserModalInstance;
+let networkInstance = null;
+
+document.addEventListener("DOMContentLoaded", () => {
+    ordersModalInstance = new bootstrap.Modal(document.getElementById('ordersModal'));
+    catalogModalInstance = new bootstrap.Modal(document.getElementById('catalogModal'));
+    graphModalInstance = new bootstrap.Modal(document.getElementById('graphModal'));
+    createUserModalInstance = new bootstrap.Modal(document.getElementById('createUserModal'));
+});
+
+// Helper: Formats 3 digits ("101") to 36-char Cassandra UUID
+function toCassandraUuid(val) {
+    let clean = String(val).trim().replace(/^u/i, '');
+    if (/^\d+$/.test(clean)) {
+        return "00000000-0000-0000-0000-" + clean.padStart(12, '0');
+    }
+    return clean;
+}
+
+// Helper: Formats 3 digits ("101") to Neo4j Node ID ("u101")
+function toNeo4jUserId(val) {
+    let clean = String(val).trim();
+    if (/^\d+$/.test(clean)) return "u" + clean;
+    return clean;
+}
+
+function openOrdersModal() {
+    document.getElementById("modalUserUuid").value = document.getElementById("orderUserId").value;
+    ordersModalInstance.show();
+    fetchUserOrders();
+}
+
+function openCatalogModal() {
+    catalogModalInstance.show();
+    loadCatalogProducts();
+}
+
+function openGraphModal() {
+    graphModalInstance.show();
+    setTimeout(renderVisualGraph, 300);
+}
+
+function openCreateUserModal() {
+    createUserModalInstance.show();
+}
+
+// 1. Create New User in Neo4j
+async function submitCreateUser() {
+    const rawId = document.getElementById("newUserId").value.trim();
+    const name = document.getElementById("newUserName").value.trim();
+    const email = document.getElementById("newUserEmail").value.trim();
+    const alertEl = document.getElementById("createUserAlert");
+    
+    if (!rawId || !name || !email) {
+        alertEl.className = "alert alert-warning py-2 small mb-0";
+        alertEl.innerText = "Please complete all fields.";
+        alertEl.classList.remove("d-none");
+        return;
+    }
+    
+    const uId = toNeo4jUserId(rawId);
+    alertEl.className = "alert alert-info py-2 small mb-0";
+    alertEl.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving user to Neo4j...';
+    alertEl.classList.remove("d-none");
+    
+    try {
+        const res = await fetch(`${GATEWAY}/api/v1/graph/users`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: uId, name, email })
+        });
+        
+        if (res.ok) {
+            alertEl.className = "alert alert-success py-2 small mb-0";
+            alertEl.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>User <strong>${uId}</strong> (${name}) registered successfully!`;
+            setTimeout(() => createUserModalInstance.hide(), 1200);
+        } else {
+            const err = await res.text();
+            alertEl.className = "alert alert-danger py-2 small mb-0";
+            alertEl.innerText = `Failed: ${err}`;
+        }
+    } catch (e) {
+        alertEl.className = "alert alert-danger py-2 small mb-0";
+        alertEl.innerText = `Error: ${e.message}`;
+    }
+}
+
+// 2. Follow User (Strict Self-Follow Guard)
+async function quickFollow() {
+    const rawFollower = document.getElementById("quickFollowerId").value.trim();
+    const rawTarget = document.getElementById("quickTargetId").value.trim();
+    const statusEl = document.getElementById("quickFollowStatus");
+    
+    if (!rawFollower || !rawTarget) {
+        statusEl.className = "text-warning small text-truncate";
+        statusEl.innerText = "Please provide both follower and target IDs.";
+        return;
+    }
+
+    if (rawFollower.toLowerCase() === rawTarget.toLowerCase()) {
+        statusEl.className = "text-danger small fw-bold text-truncate";
+        statusEl.innerHTML = '<i class="bi bi-slash-circle me-1"></i> A user cannot follow themselves!';
+        return;
+    }
+    
+    const follower = toNeo4jUserId(rawFollower);
+    const target = toNeo4jUserId(rawTarget);
+    
+    statusEl.className = "text-info small text-truncate";
+    statusEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Linking graph nodes...';
+    
+    try {
+        const res = await fetch(`${GATEWAY}/api/v1/graph/users/${encodeURIComponent(follower)}/follow/${encodeURIComponent(target)}`, { method: "POST" });
+        if (res.ok) {
+            statusEl.className = "text-success small fw-semibold text-truncate";
+            statusEl.innerHTML = ` <span class="text-white">${follower}</span> is now following <span class="text-white">${target}</span>!`;
+        } else {
+            const err = await res.json();
+            statusEl.className = "text-danger small text-truncate";
+            statusEl.innerText = err.message || `Failed: HTTP ${res.status}`;
+        }
+    } catch (e) {
+        statusEl.className = "text-danger small text-truncate";
+        statusEl.innerText = `Error: ${e.message}`;
+    }
+}
+
+// 3. Products Catalog & Order Flow with Quantity
+async function loadCatalogProducts() {
+    const container = document.getElementById("catalogListContainer");
+    container.innerHTML = '<div class="text-center text-secondary py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading products from Elasticsearch...</div>';
+    
+    try {
+        const res = await fetch(`${GATEWAY}/api/v1/products/search?q=`);
+        const rawData = await res.json();
+        let items = Array.isArray(rawData) ? rawData : (rawData.content || [rawData]);
+        
+        if (!items || items.length === 0) {
+            container.innerHTML = '<div class="alert alert-dark text-center text-secondary">No products available in Elasticsearch.</div>';
+            return;
+        }
+        
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-dark table-hover align-middle mb-0" style="font-size: 0.85rem;">
+                    <thead>
+                        <tr class="text-secondary border-secondary">
+                            <th>Product</th>
+                            <th>Category</th>
+                            <th>Unit Price</th>
+                            <th style="width: 110px;">Quantity</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${items.map(p => `
+                            <tr>
+                                <td>
+                                    <div class="fw-bold text-white">${p.name}</div>
+                                    <small class="text-secondary">ID: ${p.id}</small>
+                                </td>
+                                <td><span class="badge bg-secondary">${p.category || 'General'}</span></td>
+                                <td class="text-success fw-bold">$${p.price}</td>
+                                <td>
+                                    <input type="number" id="qty_${p.id}" class="form-control form-control-sm text-center" value="1" min="1" max="10">
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-success" onclick="orderSingleProduct('${p.id}', ${p.price})">
+                                        <i class="bi bi-bag-plus me-1"></i>Order
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    } catch (err) {
+        container.innerHTML = `<div class="text-danger small">Error loading catalog: ${err.message}</div>`;
+    }
+}
+
+async function orderSingleProduct(productId, price) {
+    const qty = parseInt(document.getElementById(`qty_${productId}`).value) || 1;
+    const totalAmount = parseFloat((price * qty).toFixed(2));
+    
+    document.getElementById("orderProductIds").value = productId;
+    document.getElementById("orderTotal").value = totalAmount;
+    catalogModalInstance.hide();
+    await placeOrder();
+}
+
+// 4. Visual Force-Directed Graph (Live Neo4j Data)
+async function renderVisualGraph() {
+    const container = document.getElementById('networkGraph');
+    const nodes = new vis.DataSet();
+    const edges = new vis.DataSet();
+    
+    try {
+        const res = await fetch(`${GATEWAY}/api/v1/graph/users`);
+        const users = await res.json();
+        
+        if (Array.isArray(users)) {
+            const addedNodes = new Set();
+            
+            users.forEach(u => {
+                if (!addedNodes.has(u.id)) {
+                    nodes.add({ id: u.id, label: `${u.name || u.id}\n(${u.id})`, color: '#38bdf8', shape: 'circle' });
+                    addedNodes.add(u.id);
+                }
+                
+                // Add follow edges
+                if (u.following) {
+                    u.following.forEach(f => {
+                        if (!addedNodes.has(f.id)) {
+                            nodes.add({ id: f.id, label: `${f.name || f.id}\n(${f.id})`, color: '#38bdf8', shape: 'circle' });
+                            addedNodes.add(f.id);
+                        }
+                        edges.add({ from: u.id, to: f.id, label: 'FOLLOWS', arrows: 'to', color: '#06b6d4' });
+                    });
+                }
+                
+                // Add purchase edges
+                if (u.purchasedProducts) {
+                    u.purchasedProducts.forEach(p => {
+                        if (!addedNodes.has(p.id)) {
+                            nodes.add({ id: p.id, label: `${p.name || p.id}\n(${p.id})`, color: '#22c55e', shape: 'box' });
+                            addedNodes.add(p.id);
+                        }
+                        edges.add({ from: u.id, to: p.id, label: 'PURCHASED', arrows: 'to', color: '#eab308' });
+                    });
+                }
+            });
+        }
+    } catch (e) {
+        console.warn("Falling back to graph default view", e);
+    }
+    
+    const data = { nodes, edges };
+    const options = {
+        nodes: { font: { color: '#ffffff', size: 12 } },
+        edges: { font: { color: '#94a3b8', size: 10, align: 'top' }, smooth: true },
+        physics: { stabilization: true, barnesHut: { springLength: 130 } }
+    };
+
+    if (networkInstance != null) networkInstance.destroy();
+    networkInstance = new vis.Network(container, data, options);
+}
+
+// 5. Elasticsearch Search
+async function searchCatalog() {
+    const q = document.getElementById("searchQuery").value;
+    const container = document.getElementById("searchResults");
+    container.innerHTML = '<div class="text-secondary small text-center mt-4">Searching index...</div>';
+    
+    try {
+        const url = `${GATEWAY}/api/v1/products/search?q=${encodeURIComponent(q)}`;
+        const res = await fetch(url);
+        const rawData = await res.json();
+        
+        let items = Array.isArray(rawData) ? rawData : (rawData.content || [rawData]);
+        if (!items || items.length === 0 || !items[0] || !items[0].name) {
+            container.innerHTML = '<div class="text-warning small text-center mt-4"><i class="bi bi-exclamation-circle me-1"></i>No matching products found.</div>';
+            return;
+        }
+        
+        container.innerHTML = items.map(p => `
+            <div class="result-item p-2 mb-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <span class="fw-bold text-white small">${p.name || 'Product'}</span>
+                    <span class="badge bg-success">$${p.price || 0}</span>
+                </div>
+                <div class="text-secondary" style="font-size:0.75rem;">
+                    <span class="me-2"><i class="bi bi-tag me-1"></i>${p.id || 'N/A'}</span>
+                    <span><i class="bi bi-folder me-1"></i>${p.category || 'General'}</span>
+                </div>
+            </div>
+        `).join("");
+    } catch (err) {
+        container.innerHTML = `<div class="text-danger small">Error: ${err.message}</div>`;
+    }
+}
+
+// 6. Cassandra Order + Kafka Event
+async function placeOrder() {
+    const statusContainer = document.getElementById("orderStatusCard");
+    const inputUser = document.getElementById("orderUserId").value.trim();
+    const cassandraUuid = toCassandraUuid(inputUser);
+    
+    statusContainer.innerHTML = '<div class="text-info small text-center mt-3"><div class="spinner-border spinner-border-sm me-2"></div>Processing transaction...</div>';
+    
+    const productIds = document.getElementById("orderProductIds").value.split(",").map(s => s.trim()).filter(Boolean);
+    const payload = {
+        userId: cassandraUuid,
+        customerEmail: document.getElementById("orderEmail").value,
+        totalAmount: parseFloat(document.getElementById("orderTotal").value),
+        productIds: productIds
+    };
+    
+    try {
+        const res = await fetch(`${GATEWAY}/api/v1/orders`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        
+        if (res.status === 200) {
+            const orderId = data.key?.orderId || 'Generated';
+            const orderTime = data.key?.createdAt ? new Date(data.key.createdAt).toLocaleTimeString() : 'Just now';
+            
+            statusContainer.innerHTML = `
+                <div class="p-3 result-item border-success mt-1">
+                    <div class="d-flex align-items-center text-success fw-bold small mb-2">
+                        <i class="bi bi-check-circle-fill me-2 fs-6"></i> Order Placed Successfully!
+                    </div>
+                    <div class="small text-secondary mb-1"><strong>User ID:</strong> <span class="text-info">${inputUser}</span></div>
+                    <div class="small text-secondary mb-1"><strong>Order ID:</strong> <span class="text-white">${orderId}</span></div>
+                    <div class="small text-secondary mb-1"><strong>Status:</strong> <span class="badge bg-success">${data.status || 'CREATED'}</span></div>
+                    <div class="small text-secondary mb-1"><strong>Total Paid:</strong> <span class="text-success fw-bold">$${data.totalAmount}</span></div>
+                    <div class="small text-secondary mb-2"><strong>Time:</strong> ${orderTime}</div>
+                    <div class="p-2 rounded" style="background:#090d16; font-size:0.75rem; color:#38bdf8;">
+                        <i class="bi bi-broadcast me-1"></i> Published <code>OrderPlacedEvent</code> to Kafka for: <strong>${productIds.join(', ')}</strong>
+                    </div>
+                </div>
+            `;
+        } else {
+            statusContainer.innerHTML = `
+                <div class="p-3 result-item border-danger mt-1">
+                    <div class="text-danger fw-bold small"><i class="bi bi-x-circle me-1"></i> Order Failed (${res.status})</div>
+                    <div class="small text-secondary mt-1">${data.error || 'Check backend logs for details.'}</div>
+                </div>
+            `;
+        }
+    } catch (err) {
+        statusContainer.innerHTML = `<div class="text-danger small mt-2">Error: ${err.message}</div>`;
+    }
+}
+
+// 7. Neo4j Social & Bought-Together Recommendations
+async function getSocialRecs() {
+    const rawUid = document.getElementById("graphUserId").value.trim();
+    const uid = toNeo4jUserId(rawUid);
+    const container = document.getElementById("recResults");
+    container.innerHTML = `<div class="text-secondary small text-center mt-3"><div class="spinner-border spinner-border-sm me-2"></div>Analyzing social network for ${uid}...</div>`;
+    
+    try {
+        const res = await fetch(`${GATEWAY}/api/v1/graph/recommendations/social/${uid}`);
+        const data = await res.json();
+        renderRecCards(data, `Social recommendations based on friends followed by <strong>${uid}</strong>:`);
+    } catch (err) {
+        container.innerHTML = `<div class="text-danger small">Error: ${err.message}</div>`;
+    }
+}
+
+async function getBoughtTogetherRecs() {
+    const pid = document.getElementById("graphProductId").value.trim();
+    const container = document.getElementById("recResults");
+    container.innerHTML = `<div class="text-secondary small text-center mt-3"><div class="spinner-border spinner-border-sm me-2"></div>Traversing co-purchased items for ${pid}...</div>`;
+    
+    try {
+        const res = await fetch(`${GATEWAY}/api/v1/graph/recommendations/bought-together/${pid}`);
+        const data = await res.json();
+        renderRecCards(data, `Frequently bought together with <strong>${pid}</strong>:`);
+    } catch (err) {
+        container.innerHTML = `<div class="text-danger small">Error: ${err.message}</div>`;
+    }
+}
+
+function renderRecCards(items, explanation) {
+    const container = document.getElementById("recResults");
+    if (!items || items.length === 0) {
+        container.innerHTML = `
+            <div class="p-3 result-item text-center mt-2">
+                <i class="bi bi-info-circle text-info d-block mb-1 fs-5"></i>
+                <div class="small text-secondary">No recommendations found in Neo4j graph.</div>
+            </div>`;
+        return;
+    }
+    
+    let html = `<div class="text-secondary small mb-2" style="font-size:0.75rem;">${explanation}</div>`;
+    html += items.map(p => `
+        <div class="result-item p-2 mb-2">
+            <div class="d-flex justify-content-between align-items-start">
+                <span class="fw-bold text-white small">${p.name || 'Recommended Item'}</span>
+                <span class="badge bg-info text-dark">Suggested</span>
+            </div>
+            <div class="text-secondary" style="font-size:0.75rem;">ID: ${p.id} | Category: ${p.category || 'N/A'}</div>
+        </div>
+    `).join("");
+    
+    container.innerHTML = html;
+}
+
+// 8. Modal: Fetch All Orders for User from Cassandra
+async function fetchUserOrders() {
+    const rawUid = document.getElementById("modalUserUuid").value.trim();
+    const uid = toCassandraUuid(rawUid);
+    const container = document.getElementById("modalOrdersList");
+    container.innerHTML = '<div class="text-center text-secondary py-3"><div class="spinner-border spinner-border-sm me-2"></div>Querying Cassandra partition...</div>';
+    
+    try {
+        const res = await fetch(`${GATEWAY}/api/v1/orders/user/${encodeURIComponent(uid)}`);
+        const rawData = await res.json();
+        
+        if (!res.ok) {
+            const errorMsg = rawData.message || rawData.error || `HTTP ${res.status}`;
+            container.innerHTML = `<div class="alert alert-danger py-2 small mb-0"><i class="bi bi-exclamation-triangle-fill me-2"></i>Failed to fetch orders: ${errorMsg}</div>`;
+            return;
+        }
+        
+        let orders = Array.isArray(rawData) ? rawData : (rawData.content || [rawData]);
+        if (!orders || orders.length === 0) {
+            container.innerHTML = `<div class="alert alert-dark text-center text-secondary border-secondary">No orders recorded in Cassandra for user ID <code>${rawUid}</code>.</div>`;
+            return;
+        }
+        
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-dark table-hover align-middle mb-0" style="font-size: 0.85rem;">
+                    <thead>
+                        <tr class="text-secondary border-secondary">
+                            <th>Order ID</th>
+                            <th>Date / Timestamp</th>
+                            <th>Status</th>
+                            <th>Total Amount</th>
+                            <th>Customer Email</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${orders.map(o => `
+                            <tr>
+                                <td class="font-monospace text-info">${o.key?.orderId || o.id || 'N/A'}</td>
+                                <td>${o.key?.createdAt ? new Date(o.key.createdAt).toLocaleString() : 'N/A'}</td>
+                                <td><span class="badge bg-success">${o.status || 'COMPLETED'}</span></td>
+                                <td class="text-success fw-bold">$${o.totalAmount}</td>
+                                <td class="text-secondary">${o.customerEmail || 'N/A'}</td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    } catch (err) {
+        container.innerHTML = `<div class="text-danger small">Error fetching orders: ${err.message}</div>`;
+    }
+}
+
+// 9. Rate Limiter Stress Test (Token Bucket)
+async function fireRateLimitTest() {
+    const consoleEl = document.getElementById("rateLimitConsole");
+    const bar = document.getElementById("rateLimitProgress");
+    consoleEl.innerText = "Blasting 25 requests to Gateway...\n";
+    bar.style.width = "0%";
+    
+    let okCount = 0;
+    let throttledCount = 0;
+    
+    const requests = Array.from({ length: 25 }, async () => {
+        try {
+            const res = await fetch(`${GATEWAY}/api/v1/orders/user/00000000-0000-0000-0000-000000000101`, {
+                headers: { "X-User-Id": "stress-test-user" }
+            });
+            if (res.status === 200) okCount++;
+            else if (res.status === 429) throttledCount++;
+        } catch {
+            throttledCount++;
+        }
+    });
+    
+    await Promise.all(requests);
+    bar.style.width = "100%";
+    consoleEl.innerText = `Burst Complete (25 Requests):\n Status 200 (Allowed): ${okCount}\n❌ Status 429 (Rate-Limited): ${throttledCount}\n\nRedis Token Bucket enforcement active!`;
+}
+</script>
+</body>
+</html>

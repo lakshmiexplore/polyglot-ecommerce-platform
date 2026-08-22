@@ -81,6 +81,11 @@ public class SocialGraphService {
     @Transactional
     @CacheEvict(value = "social-recommendations", key = "#followerId")
     public UserNode followUser(String followerId, String targetUserId) {
+
+        if (followerId == null || targetUserId == null || followerId.trim().equalsIgnoreCase(targetUserId.trim())) {
+            throw new IllegalArgumentException("A user cannot follow themselves.");
+        }
+
         log.info("User {} followed {} -> evicting social recommendation cache for {}", followerId, targetUserId, followerId);
         UserNode follower = userRepository.findById(followerId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + followerId));
@@ -101,5 +106,9 @@ public class SocialGraphService {
     public List<ProductNode> getSocialRecommendations(String userId, int limit) {
         log.info("⚡ [CACHE MISS] Querying Neo4j for social recommendations on user: {}", userId);
         return productRepository.findRecommendedByFriends(userId, limit);
+    }
+
+    public Object getAllUsers() {
+        return userRepository.findAll();
     }
 }
