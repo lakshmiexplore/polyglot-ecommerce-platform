@@ -22,14 +22,38 @@ public class OrderEventsConsumer {
             return;
         }
 
+        // Normalize UUID / 3-digit ID to Neo4j unified ID format (e.g. 'u106')
+        String neo4jUserId = normalizeToNeo4jId(event.getUserId());
+
         for (String productId : event.getProductIds()) {
             try {
-                socialGraphService.recordPurchase(event.getUserId(), productId);
-                log.info(" Synced purchase: (:User {})-[:PURCHASED]->(:Product {})", event.getUserId(), productId);
+                socialGraphService.recordPurchase(neo4jUserId, productId);
+                log.info(" Synced purchase: (:User {})-[:PURCHASED]->(:Product {})", neo4jUserId, productId);
             } catch (Exception ex) {
                 log.error("Failed to sync purchase for user {} and product {}: {}", 
-                        event.getUserId(), productId, ex.getMessage());
+                        neo4jUserId, productId, ex.getMessage());
             }
         }
+    }
+
+    private String normalizeToNeo4jId(String rawId) {
+        if (rawId == null || rawId.isBlank()) {
+            return "u000";
+        }
+        String clean = rawId.trim().toLowerCase();
+        
+        // If it's a UUID (e.g. 00000000-0000-0000-0000-000000000106)
+        if (clean.contains("-")) {
+            String lastSegment = clean.substring(clean.lastIndexOf("-") + 1).replaceFirst("^0+", "");
+            return "u" + (lastSegment.isEmpty() ? "0" : lastSegment);
+        }
+        
+        // If it's already "u106"
+        if (clean.startsWith("u")) {
+            return clean;
+        }
+        
+        // If it's plain "106"
+        return "u" + clean;
     }
 }

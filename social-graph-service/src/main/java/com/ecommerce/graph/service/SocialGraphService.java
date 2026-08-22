@@ -6,15 +6,14 @@ import com.ecommerce.graph.repository.ProductNodeRepository;
 import com.ecommerce.graph.repository.UserNodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
-//import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
 
 @Slf4j
@@ -29,7 +28,11 @@ public class SocialGraphService {
     @Transactional
     public UserNode saveUser(String id, String name, String email) {
         UserNode user = userRepository.findById(id)
-                .orElse(UserNode.builder().id(id).build());
+                .orElseGet(() -> UserNode.builder()
+                        .id(id)
+                        .purchasedProducts(new HashSet<>())
+                        .following(new HashSet<>())
+                        .build());
         user.setName(name);
         user.setEmail(email);
         return userRepository.save(user);
@@ -38,7 +41,7 @@ public class SocialGraphService {
     @Transactional
     public ProductNode saveProduct(String id, String name, String category) {
         ProductNode product = productRepository.findById(id)
-                .orElse(ProductNode.builder().id(id).build());
+                .orElseGet(() -> ProductNode.builder().id(id).build());
         product.setName(name);
         product.setCategory(category);
         return productRepository.save(product);
@@ -46,10 +49,27 @@ public class SocialGraphService {
 
     @Transactional
     public UserNode recordPurchase(String userId, String productId) {
-        UserNode user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
-        ProductNode product = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found: " + productId));
+        // Auto-create UserNode if this is their first purchase
+        UserNode user = userRepository.findById(userId).orElseGet(() -> {
+            log.info("Auto-creating User node in Neo4j during order sync: {}", userId);
+            return UserNode.builder()
+                    .id(userId)
+                    .name("User " + userId)
+                    .email(userId + "@example.com")
+                    .purchasedProducts(new HashSet<>())
+                    .following(new HashSet<>())
+                    .build();
+        });
+
+        // Auto-create ProductNode if missing
+        ProductNode product = productRepository.findById(productId).orElseGet(() -> {
+            log.info("Auto-creating Product node in Neo4j during order sync: {}", productId);
+            return productRepository.save(ProductNode.builder()
+                    .id(productId)
+                    .name(productId.toUpperCase())
+                    .category("General")
+                    .build());
+        });
 
         user.purchase(product);
         UserNode savedUser = userRepository.save(user);
@@ -69,9 +89,11 @@ public class SocialGraphService {
             socialCache.evict(userId);
 
             // Evict feeds of all direct followers
-            for (String followerId : followerIds) {
-                socialCache.evict(followerId);
-                log.info("Evicted social recommendation cache for follower: {}", followerId);
+            if (followerIds != null) {
+                for (String followerId : followerIds) {
+                    socialCache.evict(followerId);
+                    log.info("Evicted social recommendation cache for follower: {}", followerId);
+                }
             }
         }
 
@@ -81,7 +103,6 @@ public class SocialGraphService {
     @Transactional
     @CacheEvict(value = "social-recommendations", key = "#followerId")
     public UserNode followUser(String followerId, String targetUserId) {
-
         if (followerId == null || targetUserId == null || followerId.trim().equalsIgnoreCase(targetUserId.trim())) {
             throw new IllegalArgumentException("A user cannot follow themselves.");
         }
@@ -108,7 +129,7 @@ public class SocialGraphService {
         return productRepository.findRecommendedByFriends(userId, limit);
     }
 
-    public Object getAllUsers() {
+    public List<UserNode> getAllUsers() {
         return userRepository.findAll();
     }
 }
