@@ -122,6 +122,18 @@ services:
     networks:
       - polyglot-net
 
+
+# ==========================================
+  # 6. DISTRIBUTED TRACING (Zipkin)
+  # ==========================================
+  zipkin:
+    image: openzipkin/zipkin:3.4
+    container_name: polyglot-zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - polyglot-net
+
 networks:
   polyglot-net:
     driver: bridge
